@@ -158,6 +158,8 @@ static const furn_str_id furn_f_water_mill( "f_water_mill" );
 static const furn_str_id furn_f_water_mill_active( "f_water_mill_active" );
 static const furn_str_id furn_f_wind_mill( "f_wind_mill" );
 static const furn_str_id furn_f_wind_mill_active( "f_wind_mill_active" );
+static const furn_str_id furn_f_retting_empty( "f_retting_empty" );
+static const furn_str_id furn_f_retting_full( "f_retting_full" );
 
 static const itype_id itype_2x4( "2x4" );
 static const itype_id itype_arm_splint( "arm_splint" );
@@ -3291,6 +3293,98 @@ void iexamine::stook_full( Character &, const tripoint &examp )
         }
     }
     here.furn_set( examp, next_stook_type );
+}
+
+void iexamine::retting_empty( Character &, const tripoint &examp )
+{
+    map &here = get_map();
+    furn_id cur_retting_type = here.furn( examp );
+    furn_id next_retting_type = furn_str_id::NULL_ID();
+    if( cur_retting_type == furn_f_retting_empty ) {
+        next_retting_type = furn_f_retting_full;
+    } else {
+        debugmsg( "Examined furniture has action retting_empty, but is of type %s",
+                  here.furn( examp ).id().c_str() );
+        return;
+    }
+
+    bool flax_present = false;
+    map_stack items = here.i_at( examp );
+    for( const item &i : items ) {
+        if( i.has_flag( flag_RETTABLE ) && !i.rotten() ) {
+            flax_present = true;
+        } else {
+            add_msg( m_bad, _( "This pile contains %s, which can't be dried here!" ), i.tname( 1,
+                     false ) );
+            return;
+        }
+    }
+
+    if( !flax_present ) {
+        add_msg( _( "Place some fresh flax here and try again." ) );
+        return;
+	} else if( !here.is_water_shallow_current( examp ) ) {
+		add_msg( _( "The retting site must be in shallow water." ) );
+		return;
+    } else if( !here.is_outside( examp ) ) {
+        add_msg( _( "The retting site will need to be set up outside to dry." ) );
+        return;
+    } else {
+        add_msg( _( "This pile contains flax that is ready to be left out for drying." ) );
+        if( !query_yn( _( "Put the flax in the water?" ) ) ) {
+            return;
+        }
+    }
+
+    here.furn_set( examp, next_retting_type );
+    add_msg( _( "You set up the flex and leave it to dry." ) );
+}
+
+void iexamine::retting_full( Character &, const tripoint &examp )
+{
+    map &here = get_map();
+    furn_id cur_retting_type = here.furn( examp );
+    furn_id next_retting_type = furn_str_id::NULL_ID();
+    if( cur_retting_type == furn_f_retting_full ) {
+        next_retting_type = furn_str_id::NULL_ID();
+    } else {
+        debugmsg( "Examined furniture has action retting_full, but is of type %s",
+                  here.furn( examp ).id().c_str() );
+        return;
+    }
+    map_stack items = here.i_at( examp );
+    if( items.empty() ) {
+        debugmsg( _( "Examined furniture is retting_full but doesn't contain any grain." ) );
+        here.furn_set( examp, next_retting_type );
+        return;
+    }
+    add_msg( _( "There's a grain retting there." ) );
+    const item &clock = *items.begin();
+    const time_duration drying_time = 1_hours; /* should be something else */
+    const time_duration time_left = drying_time - clock.age();
+
+    if( time_left > 0_turns ) {
+        add_msg( _( "The retting process will finish drying in %s." ), to_string( time_left ) );
+        return;
+    }
+    for( item &it : items ) {
+        if( it.has_flag( flag_RETTABLE ) && it.get_comestible() ) {
+            item result( it.get_comestible()->smoking_result, it.birthday() );
+            recipe rec;
+            result.inherit_flags( it, rec );
+            if( !result.has_flag( flag_NUTRIENT_OVERRIDE ) ) {
+                // If the item has "cooks_like" it will be replaced by that item as a component.
+                if( !it.get_comestible()->cooks_like.is_empty() ) {
+                    // Set charges to 1 for stacking purposes.
+                    it = item( it.get_comestible()->cooks_like, it.birthday(), 1 );
+                }
+                result.components.add( it );
+            }
+            add_msg( _( "You take down the retting site as the process is now finished." ) );
+            it = result;
+        }
+    }
+    here.furn_set( examp, next_retting_type );
 }
 
 void iexamine::autoclave_empty( Character &you, const tripoint &examp )
@@ -7451,6 +7545,8 @@ iexamine_functions iexamine_functions_from_string( const std::string &function_n
             { "kiln_full", &iexamine::kiln_full },
             { "stook_empty", &iexamine::stook_empty },
             { "stook_full", &iexamine::stook_full },
+            { "retting_empty", &iexamine::retting_empty },
+            { "retting_full", &iexamine::retting_full },
             { "arcfurnace_empty", &iexamine::arcfurnace_empty },
             { "arcfurnace_full", &iexamine::arcfurnace_full },
             { "autoclave_empty", &iexamine::autoclave_empty },
