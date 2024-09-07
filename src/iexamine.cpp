@@ -3323,9 +3323,9 @@ void iexamine::retting_empty( Character &, const tripoint &examp )
     if( !flax_present ) {
         add_msg( _( "Place some fresh flax here and try again." ) );
         return;
-	} else if( !here.is_water_shallow_current( examp ) ) {
-		add_msg( _( "The retting site must be in shallow water." ) );
-		return;
+    } else if( !here.is_water_shallow_current( examp ) ) {
+        add_msg( _( "The retting site must be in shallow water." ) );
+        return;
     } else if( !here.is_outside( examp ) ) {
         add_msg( _( "The retting site will need to be set up outside to dry." ) );
         return;
