@@ -3313,7 +3313,7 @@ void iexamine::stook_full( Character &, const tripoint_bub_ms &examp )
     here.furn_set( examp, next_stook_type );
 }
 
-void iexamine::retting_empty( Character &, const tripoint &examp )
+void iexamine::retting_empty( Character &, const tripoint_bub_ms &examp )
 {
     map &here = get_map();
     furn_id cur_retting_type = here.furn( examp );
@@ -3358,7 +3358,7 @@ void iexamine::retting_empty( Character &, const tripoint &examp )
     add_msg( _( "You set up the flex and leave it to dry." ) );
 }
 
-void iexamine::retting_full( Character &, const tripoint &examp )
+void iexamine::retting_full( Character &, const tripoint_bub_ms &examp )
 {
     map &here = get_map();
     furn_id cur_retting_type = here.furn( examp );
