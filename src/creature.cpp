@@ -218,6 +218,26 @@ void Creature::setpos( const tripoint_bub_ms &p, bool check_gravity/* = true*/ )
     }
 }
 
+void Creature::setpos( map *here, const tripoint_bub_ms &p, bool check_gravity/* = true*/ )
+{
+    const tripoint_abs_ms old_loc = pos_abs();
+    set_pos_abs_only( here->get_abs( p ) );
+    on_move( old_loc );
+    if( check_gravity ) {
+        gravity_check( here );
+    }
+}
+
+void Creature::setpos( const tripoint_abs_ms &p, bool check_gravity/* = true*/ )
+{
+    const tripoint_abs_ms old_loc = pos_abs();
+    set_pos_abs_only( p );
+    on_move( old_loc );
+    if( check_gravity ) {
+        gravity_check();
+    }
+}
+
 bool Creature::will_be_cramped_in_vehicle_tile( const tripoint_abs_ms &loc ) const
 {
     map &here = get_map();
@@ -310,6 +330,10 @@ std::vector<std::string> Creature::get_grammatical_genders() const
 }
 
 void Creature::gravity_check()
+{
+}
+
+void Creature::gravity_check( map * )
 {
 }
 
@@ -654,10 +678,10 @@ bool Creature::sees( const tripoint_bub_ms &t, bool is_avatar, int range_mod ) c
 
 // Helper function to check if potential area of effect of a weapon overlaps vehicle
 // Maybe TODO: If this is too slow, precalculate a bounding box and clip the tested area to it
-static bool overlaps_vehicle( const std::set<tripoint_bub_ms> &veh_area, const tripoint_bub_ms &pos,
+static bool overlaps_vehicle( const std::set<tripoint_abs_ms> &veh_area, const tripoint_abs_ms &pos,
                               const int area )
 {
-    for( const tripoint_bub_ms &tmp : tripoint_range<tripoint_bub_ms>( pos - tripoint( area, area, 0 ),
+    for( const tripoint_abs_ms &tmp : tripoint_range<tripoint_abs_ms>( pos - tripoint( area, area, 0 ),
             pos + tripoint( area - 1, area - 1, 0 ) ) ) {
         if( veh_area.count( tmp ) > 0 ) {
             return true;
@@ -799,7 +823,7 @@ Creature *Creature::auto_find_hostile_target( int range, int &boo_hoo, int area 
             continue; // Handle this late so that boo_hoo++ can happen
         }
         // Expensive check for proximity to vehicle
-        if( self_area_iff && overlaps_vehicle( in_veh->get_points(), m->pos_bub(), area ) ) {
+        if( self_area_iff && overlaps_vehicle( in_veh->get_points(), m->pos_abs(), area ) ) {
             continue;
         }
 
@@ -914,6 +938,8 @@ void Creature::deal_melee_hit( Creature *source, int hit_spread, bool critical_h
                                damage_instance dam, dealt_damage_instance &dealt_dam,
                                const weakpoint_attack &attack, const bodypart_id *bp )
 {
+    map &here = get_map();
+
     if( source == nullptr || source->is_hallucination() ) {
         dealt_dam.bp_hit = anatomy_human_anatomy->random_body_part();
         return;
@@ -942,7 +968,7 @@ void Creature::deal_melee_hit( Creature *source, int hit_spread, bool critical_h
     attack_copy.is_crit = critical_hit;
     attack_copy.type = weakpoint_attack::type_of_melee_attack( d );
 
-    on_hit( source, bp_hit ); // trigger on-gethit events
+    on_hit( &here, source, bp_hit ); // trigger on-gethit events
     dam.onhit_effects( source, this ); // on-hit effects for inflicted damage types
     dealt_dam = deal_damage( source, bp_hit, d, attack_copy );
     dealt_dam.bp_hit = bp_hit;
@@ -1270,7 +1296,7 @@ void Creature::print_proj_avoid_msg( Creature *source, viewer &player_view ) con
  * @param attack A structure describing the attack and its results.
  * @param print_messages enables message printing by default.
  */
-void Creature::deal_projectile_attack( Creature *source, dealt_projectile_attack &attack,
+void Creature::deal_projectile_attack( map *here, Creature *source, dealt_projectile_attack &attack,
                                        const double &missed_by, bool print_messages,
                                        const weakpoint_attack &wp_attack )
 {
@@ -1285,7 +1311,7 @@ void Creature::deal_projectile_attack( Creature *source, dealt_projectile_attack
         if( mons && mons->mounted_player ) {
             if( !mons->has_flag( mon_flag_MECH_DEFENSIVE ) &&
                 one_in( std::max( 2, mons->get_size() - mons->mounted_player->get_size() ) ) ) {
-                mons->mounted_player->deal_projectile_attack( source, attack, missed_by, print_messages,
+                mons->mounted_player->deal_projectile_attack( here, source, attack, missed_by, print_messages,
                         wp_attack );
                 return;
             }
@@ -1367,7 +1393,7 @@ void Creature::deal_projectile_attack( Creature *source, dealt_projectile_attack
         messaging_projectile_attack( source, hit_selection, total_dam );
     }
 
-    check_dead_state();
+    check_dead_state( here );
     attack.last_hit_critter = this;
     attack.missed_by = goodhit;
     attack.headshot = hit_selection.is_headshot;
@@ -2040,6 +2066,8 @@ int Creature::get_effect_int( const efftype_id &eff_id, const bodypart_id &bp ) 
 }
 void Creature::process_effects()
 {
+    map &here = get_map();
+
     // id's and body_part's of all effects to be removed. If we ever get player or
     // monster specific removals these will need to be moved down to that level and then
     // passed in to this function.
@@ -2079,7 +2107,7 @@ void Creature::process_effects()
                     cata::event sent( e.death_event(), calendar::turn, std::move( event_data ) );
                     get_event_bus().send( sent );
                 }
-                die( e.get_source().resolve_creature() );
+                die( &here, e.get_source().resolve_creature() );
             }
         }
     }
@@ -2228,7 +2256,7 @@ void Creature::decrement_summon_timer()
         return;
     }
     if( lifespan_end.value() <= calendar::turn ) {
-        die( nullptr );
+        die( &get_map(), nullptr );
     }
 }
 
@@ -3296,10 +3324,10 @@ void Creature::process_damage_over_time()
     }
 }
 
-void Creature::check_dead_state()
+void Creature::check_dead_state( map *here )
 {
     if( is_dead_state() ) {
-        die( killer );
+        die( here, killer );
     }
 }
 
@@ -3345,11 +3373,13 @@ std::string Creature::replace_with_npc_name( std::string input ) const
 
 void Creature::knock_back_from( const tripoint_bub_ms &p )
 {
+    map &here = get_map();
+
     if( p == pos_bub() ) {
         return; // No effect
     }
     if( is_hallucination() ) {
-        die( nullptr );
+        die( &here, nullptr );
         return;
     }
     tripoint_bub_ms to = pos_bub();
